@@ -1,5 +1,7 @@
 var mysql = require("mysql");
 var inquirer = require("inquirer");
+const { promisify } = require("util");
+const { async } = require("rxjs");
 
 // create the connection information for the sql database
 var connection = mysql.createConnection({
@@ -19,53 +21,95 @@ var connection = mysql.createConnection({
 connection.connect(function (err) {
     if (err) throw err;
     // run the start function after the connection is made to prompt the user
+    connection.queryPromise = promisify(connection.query);
     start();
 });
+
+var counter = 0;
 
 async function start() {
     console.log("*********************");
     //runTime function
-    let userchoice = await inquirer.prompt({
-        type: "list",
-        message: "what do you want to do?",
-        name: "choice",
-        choices: [
-            "Add a department, role, or employee",
-            "View a deplartment, role, or employee",
-            "Update employee role",
-            "exit",
-        ],
-    });
+    await initQuestions(true);
+}
+
+async function initQuestions(cont) {
+    if (counter < 0) {
+        console.log("end connection");
+        connection.end();
+    } else if (!cont) {
+        counter--;
+        initQuestions(false);
+    } else {
+        let userchoice = await inquirer.prompt({
+            type: "list",
+            message: "what do you want to do?",
+            name: "choice",
+            choices: [
+                "Add a department, role, or employee",
+                "View a deplartment, role, or employee",
+                "Update employee role",
+                "exit",
+            ],
+        });
+        if (userchoice.choice === "exit") {
+            initQuestions(false);
+        } else {
+            counter++;
+            console.log(counter);
+            await furtherQuestions(userchoice);
+        }
+    }
+}
+
+async function furtherQuestions(userchoice) {
     if (userchoice.choice != "exit") {
         let type;
         if (userchoice.choice === "Add a department, role, or employee") {
             let newItem = {};
             type = await getType();
+
             if (type.role === "department") {
-                newItem["role"] = "department";
-                newItem["data"] = await addDept();
+                newItem = await addDept();
+                addDeptToDb(newItem);
             } else if (type.role === "role") {
-                newItem["role"] = "role";
-                newItem["data"] = await addRole();
+                allDepts = await retreveDept();
+                newItem = await addRole(allDepts);
+                addroleToDb(newItem);
             } else if (type.role === "employee") {
-                newItem["role"] = "employee";
-                newItem["data"] = await addEmployee();
+                allRoles = await retreveRole();
+                allEmployees = await retreveEmployee();
+                newItem = await addEmployee(allRoles, allEmployees);
+                addEmployeeToDb(newItem);
             } else {
                 console.log("option does not exist");
             }
-            // add newItem to db
         } else if (
             userchoice.choice === "View a deplartment, role, or employee"
         ) {
             type = await getType();
-            console.log(type);
+            let data;
+            if (type.role === "department") {
+                data = await retreveDept();
+                console.table(data);
+            } else if (type.role === "role") {
+                data = await retreveRole();
+                console.table(data);
+            } else if (type.role === "employee") {
+                data = await retreveEmployee();
+                console.table(data);
+            } else {
+                console.log("option does not exist");
+            }
         } else if (userchoice.choice === "Update employee role") {
             //
         }
-        // start();
-    } else {
-        connection.end();
+    } else if (userchoice.choice === "Update employee role") {
+        // update employee
+        let allEmployees = await retreveEmployee();
+        let whichEmployee = await getEmployee(allEmployees);
     }
+    initQuestions(true);
 }
 
 async function getType() {
@@ -87,7 +131,7 @@ async function addDept() {
     ]);
 }
 
-async function addRole() {
+async function addRole(depts) {
     return await inquirer.prompt([
         {
             type: "input",
@@ -103,12 +147,15 @@ async function addRole() {
             type: "list",
             message: "What department is it apart of?",
             name: "department",
-            choices: ["dept1"],
+            choices: depts.map((dept) => ({
+                name: dept.name,
+                value: dept.id,
+            })),
         },
     ]);
 }
 
-async function addEmployee() {
+async function addEmployee(roles, employees) {
     return await inquirer.prompt([
         {
             type: "input",
@@ -121,15 +168,36 @@ async function addEmployee() {
             name: "last_name",
         },
         {
-            type: "input",
+            type: "list",
             message: "What their the role?",
-            name: "role",
+            name: "role_id",
+            choices: roles.map((role) => ({
+                name: role.title,
+                value: role.id,
+            })),
         },
         {
             type: "list",
             message: "Who is their manager?",
-            name: "manager",
-            choices: ["person1"],
+            name: "manager_id",
+            choices: employees.map((employee) => ({
+                name: `${employee.first_name} ${employee.last_name}`,
+                value: employee.id,
+            })),
+        },
+    ]);
+}
+
+async function getEmployee(employees) {
+    inquirer.prompt([
+        {
+            type: "list",
+            message: "which employee?",
+            name: "employee",
+            choices: employees.map((employee) => ({
+                name: `${employee.first_name} ${employee.last_name}`,
+                value: employee.id,
+            })),
         },
     ]);
 }
@@ -137,9 +205,63 @@ async function addEmployee() {
 // SQL commands
 
 // C
-function addItem() {
-    connection.
+function addDeptToDb(item) {
+    connection.query(
+        "INSERT INTO department SET ?",
+        {
+            name: item.name,
+        },
+        async (err) => {
+            if (err) throw err;
+            console.log("added new department to db");
+            await retreveDept();
+        }
+    );
+}
+function addroleToDb(item) {
+    connection.query(
+        "INSERT INTO employee_role SET ?",
+        {
+            title: item.title,
+            salary: item.salary,
+            department_id: item.department_id,
+        },
+        async (err) => {
+            if (err) throw err;
+            console.log("added new role to db");
+            await retreveRole();
+        }
+    );
+}
+function addEmployeeToDb(item) {
+    console.log(item);
+    connection.query(
+        "INSERT INTO employee SET ?",
+        {
+            first_name: item.first_name,
+            last_name: item.last_name,
+            role_id: item.role_id,
+            manager_id: item.manager_id,
+        },
+        async (err) => {
+            if (err) throw err;
+            console.log("added new Employee to db");
+            await retreveEmployee();
+        }
+    );
 }
 // R
+async function retreveDept() {
+    return await connection.queryPromise("SELECT * FROM department");
+}
+async function retreveRole() {
+    return await connection.queryPromise("SELECT * FROM employee_role");
+}
+async function retreveEmployee() {
+    return await connection.queryPromise("SELECT * FROM employee");
+}
 // U
+// async function updateEmployee(employee_id){
+//     connection.query("UPDATE employee set ?")
+// }
 // D
