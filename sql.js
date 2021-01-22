@@ -102,12 +102,12 @@ async function furtherQuestions(userchoice) {
                 console.log("option does not exist");
             }
         } else if (userchoice.choice === "Update employee role") {
-            //
+            // update employee
+            let allEmployees = await retreveEmployee();
+            let whichEmployee = await getEmployee(allEmployees);
+            let userData = await changeEmployeeInfo(whichEmployee);
+            await updateEmployee(userData);
         }
-    } else if (userchoice.choice === "Update employee role") {
-        // update employee
-        let allEmployees = await retreveEmployee();
-        let whichEmployee = await getEmployee(allEmployees);
     }
     initQuestions(true);
 }
@@ -118,7 +118,6 @@ async function getType() {
         name: "role",
         choices: ["department", "role", "employee"],
     });
-    // return type.role;
 }
 
 async function addDept() {
@@ -189,17 +188,98 @@ async function addEmployee(roles, employees) {
 }
 
 async function getEmployee(employees) {
-    inquirer.prompt([
+    let employee = await inquirer.prompt([
         {
             type: "list",
             message: "which employee?",
-            name: "employee",
+            name: "id",
             choices: employees.map((employee) => ({
                 name: `${employee.first_name} ${employee.last_name}`,
                 value: employee.id,
             })),
         },
     ]);
+    return employee.id;
+}
+
+async function changeEmployeeInfo(employee_id) {
+    let newUserData = {};
+    newUserData["id"] = employee_id;
+
+    // change first name
+    let confirmFirstName = await inquirer.prompt({
+        type: "confirm",
+        message: "Do you want to change the first name?",
+        name: "changeFirstName",
+    });
+
+    if (confirmFirstName.changeFirstName) {
+        let changeFirstName = await inquirer.prompt({
+            type: "input",
+            message: "What is their new first name?",
+            name: "newFirstName",
+        });
+        newUserData["first_name"] = changeFirstName.newFirstName;
+    }
+
+    // change last name
+    let confirmLastName = await inquirer.prompt({
+        type: "confirm",
+        message: "Do you want to change the last name?",
+        name: "changeLastName",
+    });
+
+    if (confirmLastName.changeLastName) {
+        let changeLastName = await inquirer.prompt({
+            type: "input",
+            message: "What is their new last name?",
+            name: "newLastName",
+        });
+        newUserData["last_name"] = changeLastName.newLastName;
+    }
+
+    // change role
+    let confirmRole = await inquirer.prompt({
+        type: "confirm",
+        message: "Do you want to change their role?",
+        name: "changeRole",
+    });
+
+    if (confirmRole.changeRole) {
+        let allRoles = await retreveRole();
+        let changeRole = await inquirer.prompt({
+            type: "list",
+            message: "What is their new role?",
+            name: "newRole",
+            choices: allRoles.map((role) => ({
+                name: role.title,
+                value: role.id,
+            })),
+        });
+        newUserData["role_id"] = changeRole.newRole;
+    }
+
+    // change manager
+    let confirmManager = await inquirer.prompt({
+        type: "confirm",
+        message: "Do you want to change their manager?",
+        name: "changeManager",
+    });
+
+    if (confirmManager.changeManager) {
+        allEmployees = await retreveEmployee();
+        let changeManager = await inquirer.prompt({
+            type: "list",
+            message: "who is their new manager?",
+            name: "newManager",
+            choices: allEmployees.map((employee) => ({
+                name: `${employee.first_name} ${employee.last_name}`,
+                value: employee.id,
+            })),
+        });
+        newUserData["manager_id"] = changeManager.newManager;
+    }
+    return newUserData;
 }
 
 // SQL commands
@@ -261,7 +341,32 @@ async function retreveEmployee() {
     return await connection.queryPromise("SELECT * FROM employee");
 }
 // U
-// async function updateEmployee(employee_id){
-//     connection.query("UPDATE employee set ?")
-// }
+async function updateEmployee(employeeData) {
+    console.log("*****************!!");
+    console.log(employeeData);
+    let employee_id = employeeData.id;
+    delete employeeData.id;
+
+    let employeeDataKeys = Object.keys(employeeData);
+    console.log(employeeDataKeys);
+
+    let query = "UPDATE employee set ";
+
+    employeeDataKeys.forEach((key, i) => {
+        if (i + 1 === employeeDataKeys.length) {
+            query += `${key} = "${employeeData[key]}" `;
+        } else {
+            query += `${key} = "${employeeData[key]}", `;
+        }
+    });
+
+    query += `where id = ${employee_id}`;
+
+    console.log(query);
+
+    connection.query(query, (err, res) => {
+        if (err) throw err;
+        console.log("it has been updated");
+    });
+}
 // D
