@@ -131,6 +131,8 @@ async function addDept() {
 }
 
 async function addRole(depts) {
+    // console.log("**********************!!!");
+    // console.log(depts);
     return await inquirer.prompt([
         {
             type: "input",
@@ -299,12 +301,14 @@ function addDeptToDb(item) {
     );
 }
 function addroleToDb(item) {
+    console.log("***************************");
+    console.log(item);
     connection.query(
         "INSERT INTO employee_role SET ?",
         {
             title: item.title,
             salary: item.salary,
-            department_id: item.department_id,
+            department_id: item.department,
         },
         async (err) => {
             if (err) throw err;
